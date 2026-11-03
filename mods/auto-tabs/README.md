@@ -1,6 +1,6 @@
 # auto-tabs (omp patch)
 
-Herdr's tab bar with tabs that name themselves. Based on [longwave/herdr-auto-tabs](https://github.com/longwave/herdr-auto-tabs), **patched to read [omp](https://github.com/…)'s task titles** (this fleet runs omp, not Claude Code).
+Herdr's tab bar with tabs that name themselves. Based on [longwave/herdr-auto-tabs](https://github.com/longwave/herdr-auto-tabs), **patched to read [omp (oh-my-pi)](https://github.com/can1357/oh-my-pi)'s task titles** (this fleet runs omp, not Claude Code).
 
 ## What changed upstream
 
