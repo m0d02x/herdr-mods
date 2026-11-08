@@ -183,6 +183,76 @@ function repoIcon(on, repo, top) {
   return repoIcons.get(k);
 }
 
+// ── Dev links ─────────────────────────────────────────────────────────────
+// A space whose repo runs a frontend dev server (vite, next, astro, …) shows ↗
+// on its row: a click opens it in this computer's browser, by the first that
+// exists: its public domain from a running cloudflared tunnel (dev.bouncer.my),
+// its tailscale serve URL, the machine's address when it listens on all
+// interfaces; else it offers to expose it on the tailnet with `tailscale serve`.
+// Found by what listens inside the repo, so pm2, a tmux pane or a bare
+// `bun dev` all count. ponytail: Linux machines only (ss + /proc); a Mac's
+// own spaces show no links.
+
+// $1: repo top. One line per frontend: port, kind, folder under top, bind
+// address, best URL (tunnel domain, else tailscale serve URL; may be empty).
+const DEVLINKS_SH = `top=$1
+serve=$(tailscale serve status 2>/dev/null | grep -A1 '^https' | paste - - - | sed -nE 's#^(https://[^ ]+).*127\\.0\\.0\\.1:([0-9]+).*#\\2 \\1#p')
+# Every running tunnel's ingress: "hostname: x" then "service: http://host:port", no wildcards.
+tunnel=$(ps -eo args= | sed -nE 's#.*cloudflared.* --config[ =]([^ ]+).*#\\1#p' | sort -u | while read -r f; do
+  awk '/hostname:/{h=$NF} /service:/{if(h!=""&&h!~/\\*/){n=split($NF,a,":");print a[n]+0, "https://" h}; h=""}' "$f" 2>/dev/null
+done)
+ss -ltnpH 2>/dev/null | sed -nE 's/^\\S+\\s+\\S+\\s+\\S+\\s+(\\S+):([0-9]+)\\s.*pid=([0-9]+).*/\\2 \\3 \\1/p' | sort -un -k1,1 |
+while read -r port pid bind; do
+  cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
+  case "$cwd/" in "$top"/*) ;; *) continue ;; esac
+  kind=$(tr '\\0' ' ' < "/proc/$pid/cmdline" | grep -oE 'vite|next-server|astro|nuxt|remix|webpack|preview' | head -1)
+  [ -n "$kind" ] || continue
+  url=$(printf '%s\\n' "$tunnel" | awk -v p="$port" '$1==p{print $2; exit}')
+  [ -n "$url" ] || url=$(printf '%s\\n' "$serve" | awk -v p="$port" '$1==p{print $2; exit}')
+  printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$port" "$kind" "\${cwd#"$top"}" "$bind" "$url"
+done`;
+
+// $1: local port. Serves it on the next free tailnet HTTPS port; prints the URL.
+const EXPOSE_SH = `used=$(tailscale serve status 2>/dev/null | sed -nE 's#^https://[^ ]+:([0-9]+).*#\\1#p')
+p=8443; while printf '%s\\n' "$used" | grep -qx "$p"; do p=$((p+1)); done
+tailscale serve --bg --https=$p "http://127.0.0.1:$1" >/dev/null 2>&1 || exit 1
+host=$(tailscale status --self --json | sed -nE 's/.*"DNSName": *"([^"]+)\\.".*/\\1/p' | head -1)
+echo "https://$host:$p"`;
+
+const devLinks = {}; // JSON [machine, repo top] -> [{ port, kind, sub, bind, url }]
+
+function parseDevLinks(out) {
+  return out.split("\n").filter(Boolean).map((line) => {
+    const [port, kind, sub, bind, url] = line.split("\t");
+    return { port: Number(port), kind, sub: sub || "/", bind, url: url || null };
+  })
+    // Dev servers sit on chosen ports; ones in Linux's ephemeral range are helpers
+    // (HMR sockets, a second copy) unless someone served them.
+    .filter((l) => l.url || l.port < 32768);
+}
+
+// Where a link opens now: its tunnel domain or serve URL, or the machine's
+// address when it listens on every interface; null means it needs exposing first.
+function linkUrl(on, l) {
+  if (l.url) return l.url;
+  return ["*", "0.0.0.0", "[::]"].includes(l.bind) ? `http://${on ?? "localhost"}:${l.port}` : null;
+}
+
+function openUrl(url) {
+  exec(window()?.platform === "macos" ? "open" : "xdg-open", [url]).catch(() => {});
+}
+
+async function exposeAndOpen(on, l) {
+  const r = await exec("sh", ["-c", EXPOSE_SH, "sh", String(l.port)], { on }).catch(() => null);
+  const url = r?.code === 0 ? r.stdout.trim() : "";
+  if (!url.startsWith("https://")) return false;
+  l.url = url;
+  openUrl(url);
+  return true;
+}
+
+const linkLabel = (l) => `${l.sub === "/" ? l.kind : l.sub.split("/").pop()} · :${l.port}`;
+
 const rowHeight = ({ tree }) => (tree ? 28 : 30);
 const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
 const base = (path) => path.replace(/\/+$/, "").split("/").pop();
@@ -214,8 +284,9 @@ const lastPart = (p) => {
 export default class Spaces extends View {
   init(_props, cx) {
     // As an overlay of the sidebar: a folder's menu, or the dialog editing one.
-    const { folderMenu, edit, machine = null, fresh = false, overlay } = props() ?? {};
+    const { folderMenu, devMenu, edit, machine = null, fresh = false, overlay } = props() ?? {};
     if (folderMenu) { this.folderMenu = { id: folderMenu, machine, overlay }; return; }
+    if (devMenu) { this.devMenu = { ...devMenu, overlay }; return; }
     if (edit) {
       const f = folders(machine).list.find((x) => x.id === edit) ?? { name: NEW_FOLDER };
       this.editing = { id: edit, machine, fresh, overlay };
@@ -270,6 +341,9 @@ export default class Spaces extends View {
     // `git status` walks the whole tree, on another machine a process there:
     // only when its answer could have changed (see `due`).
     cx.timer.every(250, (cx) => this.checkNew(cx));
+    // What each repo serves: every 30 s, and soon after the first git pass.
+    cx.timer.after(3000, (cx) => this.refreshDev(cx));
+    cx.timer.every(30000, (cx) => this.refreshDev(cx));
     // "space-folders.next" and ".prev" in keys.json: the next space down the
     // list as it shows, where Herdr's own space.next goes by its own order.
     this.seen = [];
@@ -395,7 +469,7 @@ export default class Spaces extends View {
       repoIcon(on, repo, top.stdout.trim()).then((icon) => {
         if (faviconRepo[cwd] !== icon) { faviconRepo[cwd] = icon; cx.notify(); }
       });
-      const info = { name, branch: null, ahead: 0, behind: 0, repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git` };
+      const info = { name, branch: null, ahead: 0, behind: 0, repo: JSON.stringify([on, repo]), top: top.stdout.trim(), linked: repo !== `${top.stdout.trim()}/.git` };
       for (const line of r.stdout.split("\n")) {
         if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
         else if (line.startsWith("# branch.ab ")) {
@@ -801,6 +875,61 @@ export default class Spaces extends View {
       .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${g.behind}`)));
   }
 
+  // Each repo once, on its own machine; redraws when what it serves changed.
+  refreshDev(cx) {
+    const tops = new Map();
+    for (const [key, g] of Object.entries(this.git)) {
+      if (!g?.top) continue;
+      const [on] = JSON.parse(key);
+      tops.set(JSON.stringify([on, g.top]), [on, g.top]);
+    }
+    cx.spawn(async (cx) => {
+      let changed = false;
+      await Promise.all([...tops].map(async ([k, [on, top]]) => {
+        const r = await exec("sh", ["-c", DEVLINKS_SH, "sh", top], { on }).catch(() => null);
+        if (!r || r.code !== 0) return; // machine away: keep what it showed
+        const links = parseDevLinks(r.stdout);
+        if (JSON.stringify(links) !== JSON.stringify(devLinks[k])) { devLinks[k] = links; changed = true; }
+      }));
+      if (changed) cx.notify();
+    });
+  }
+
+  // ↗ at the end of a repo space's row: one frontend opens, several list.
+  devButton(w, g, t) {
+    const on = w.machine ?? null;
+    const links = devLinks[JSON.stringify([on, g.top])] ?? [];
+    if (!links.length) return null;
+    const one = links.length === 1 ? links[0] : null;
+    const title = one ? (linkUrl(on, one) ?? `Expose :${one.port} on tailnet`) : `${links.length} frontends`;
+    return div().id(`dev-${w.id}`).flex_none().px(4).rounded(4).text_size(12).text_color(one && !linkUrl(on, one) ? t.dim : t.accent)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).cursor_pointer()
+      .tooltip(title)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        if (!one) return openOverlay({ mod: "space-folders", kind: "popup", width: 280, height: 16 + links.length * 31, props: { devMenu: { on, links } } });
+        const url = linkUrl(on, one);
+        if (url) openUrl(url);
+        else exposeAndOpen(on, one).then((ok) => { if (ok) cx.notify(); });
+      })
+      .child("↗");
+  }
+
+  devMenuView(t) {
+    const { on, links, overlay } = this.devMenu;
+    return v_flex().id("dev-menu").size_full().p(5).gap(1).bg(t.popover).text_color(t.foreground).text_size(12.5)
+      .on_key_down((e, cx) => { if (e.key === "escape") { closeOverlay(overlay); cx.stop_propagation(); } })
+      .children(links.map((l) => {
+        const url = linkUrl(on, l);
+        return h_flex().id(`dev-${l.port}`).h(30).px(10).gap(8).items_center().rounded(6).cursor_pointer()
+          .hover((s) => s.bg(t.hover))
+          .on_click(() => { closeOverlay(overlay); if (url) openUrl(url); else exposeAndOpen(on, l); })
+          .child(div().flex_1().min_w(0).truncate().child(linkLabel(l)))
+          .child(div().flex_none().text_size(11).text_color(url ? t.dim : t.accent).child(url ? "↗" : "Expose on tailnet"));
+      }));
+  }
+
   // A space's avatar: its repo's own favicon when it has one (see repoIcon),
   // else the colored first letter.
   avatar(w, fill, t) {
@@ -863,7 +992,8 @@ export default class Spaces extends View {
           .when(Boolean(tree), el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
           .when(!tree, el => el.child(this.avatar(w, fill, t)))
           .child(div().flex_shrink(0).max_w(150).truncate().text_color(t.foreground).child(w.name))
-          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
+          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())
+          .when(Boolean(g?.top), (el) => { const b = this.devButton(w, g, t); return b ? el.child(b) : el; }),
       );
   }
 
@@ -884,6 +1014,7 @@ export default class Spaces extends View {
   render() {
     const t = theme();
     if (this.folderMenu) return this.folderMenuView(t);
+    if (this.devMenu) return this.devMenuView(t);
     if (this.editing) return this.editView(t);
     const collapsed = narrow();
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];

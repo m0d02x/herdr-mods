@@ -6,7 +6,7 @@ Mods for the [Herdr](https://herdr.dev) app, used across our machines (macOS + a
 |---|---|---|
 | [`auto-tabs`](mods/auto-tabs/) | Tab bar whose tabs name themselves from agent task titles, running programs, or folders | [longwave/herdr-auto-tabs](https://github.com/longwave/herdr-auto-tabs), patched for [omp (oh-my-pi)](https://github.com/can1357/oh-my-pi) agents |
 | [`vitals`](mods/vitals/) | Live machine health window (⌘⌥V): CPU equalizer, memory/load/network meters, disks, any connected machine | [mrolafsson/herdr-vitals](https://github.com/mrolafsson/herdr-vitals) (MIT, vendored unmodified) |
-| [`space-folders`](mods/space-folders/) | Spaces sidebar with colored folders, and each space's avatar taken from its repo's own favicon | [jankeesvw/herdr-space-folders](https://github.com/jankeesvw/herdr-space-folders) (MIT), patched with repo favicons |
+| [`space-folders`](mods/space-folders/) | Spaces sidebar with colored folders, repo favicons as avatars, and a ↗ that opens each repo's running frontend (tunnel domain, tailscale, or IP) | [jankeesvw/herdr-space-folders](https://github.com/jankeesvw/herdr-space-folders) (MIT), patched with repo favicons |
 | [`programs/`](programs/) | omp's π icon for every surface (tab bar, agents list, pane headers) | ours |
 
 ## Installing
