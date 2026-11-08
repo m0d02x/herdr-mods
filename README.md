@@ -18,7 +18,13 @@ cp -R mods/auto-tabs mods/space-folders ~/.config/herdr-app/mods/
 herdr-app check ~/.config/herdr-app/mods/auto-tabs
 ```
 
-`auto-tabs` and `space-folders` replace blocks of a layout: clone your layout and point its `tabs` block at `auto-tabs` and its `spaces` block at `space-folders` (see each README). `vitals` opens with ⌘⌥V and provisions its sampler itself, per machine, on first view.
+`auto-tabs` and `space-folders` replace blocks of a layout. [`layouts/my-folders.json`](layouts/my-folders.json) is Herdr's `main` with both already wired in:
+
+```sh
+cp -R mods/auto-tabs mods/space-folders ~/.config/herdr-app/mods/
+cp layouts/my-folders.json ~/.config/herdr-app/layouts/
+herdr-app do layout.switch '{"name":"my-folders"}'
+``` `vitals` opens with ⌘⌥V and provisions its sampler itself, per machine, on first view.
 
 After a Herdr update the app may come back on its stock `main` layout; switch back with `herdr-app do layout.switch '{"name":"<your layout>"}'`.
 
