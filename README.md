@@ -4,19 +4,23 @@ Mods for the [Herdr](https://herdr.dev) app, used across our machines (macOS + a
 
 | Mod | What it does | Based on |
 |---|---|---|
-| [`auto-tabs`](mods/auto-tabs/) | Tab bar whose tabs name themselves from agent task titles, running programs, or folders | [longwave/herdr-auto-tabs](https://github.com/longwave/herdr-auto-tabs), patched for [omp](https://github.com/)? agents |
+| [`auto-tabs`](mods/auto-tabs/) | Tab bar whose tabs name themselves from agent task titles, running programs, or folders | [longwave/herdr-auto-tabs](https://github.com/longwave/herdr-auto-tabs), patched for [omp (oh-my-pi)](https://github.com/can1357/oh-my-pi) agents |
 | [`vitals`](mods/vitals/) | Live machine health window (⌘⌥V): CPU equalizer, memory/load/network meters, disks, any connected machine | [mrolafsson/herdr-vitals](https://github.com/mrolafsson/herdr-vitals) (MIT, vendored unmodified) |
+| [`space-folders`](mods/space-folders/) | Spaces sidebar with colored folders, and each space's avatar taken from its repo's own favicon | [jankeesvw/herdr-space-folders](https://github.com/jankeesvw/herdr-space-folders) (MIT), patched with repo favicons |
+| [`programs/`](programs/) | omp's π icon for every surface (tab bar, agents list, pane headers) | ours |
 
 ## Installing
 
 Give your Herdr agent the repo URL (`https://github.com/m0d02x/herdr-mods`), or by hand:
 
 ```sh
-cp -R mods/auto-tabs ~/.config/herdr-app/mods/
+cp -R mods/auto-tabs mods/space-folders ~/.config/herdr-app/mods/
 herdr-app check ~/.config/herdr-app/mods/auto-tabs
 ```
 
-`auto-tabs` is a tab-bar replacement: clone your layout first and point its tabs block at it (see [its README](mods/auto-tabs/README.md)). `vitals` opens with ⌘⌥V and provisions its sampler itself, per machine, on first view.
+`auto-tabs` and `space-folders` replace blocks of a layout: clone your layout and point its `tabs` block at `auto-tabs` and its `spaces` block at `space-folders` (see each README). `vitals` opens with ⌘⌥V and provisions its sampler itself, per machine, on first view.
+
+After a Herdr update the app may come back on its stock `main` layout; switch back with `herdr-app do layout.switch '{"name":"<your layout>"}'`.
 
 ## Adding a mod
 

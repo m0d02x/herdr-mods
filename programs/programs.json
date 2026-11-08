@@ -1,0 +1,10 @@
+{
+  "programs": {
+    "omp": {
+      "name": "omp",
+      "icon": "my-icons/omp.svg",
+      "tint": true,
+      "agent": true
+    }
+  }
+}

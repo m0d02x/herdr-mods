@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- oh-my-pi: π with a terminal prompt -->
+  <path d="M4 8.5 C4 6.5 5.5 5.5 8 5.5 L19 5.5" />
+  <path d="M8.5 5.5 C7 9 6.5 13 6.5 17.5" />
+  <path d="M13 5.5 C12.5 9 12.5 12 14 14 C15.5 15.8 17.5 15 19 13.5" />
+  <path d="M4 19.5 L7 19.5" />
+</svg>
