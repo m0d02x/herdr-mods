@@ -7,6 +7,7 @@ Mods for the [Herdr](https://herdr.dev) app, used across our machines (macOS + a
 | [`auto-tabs`](mods/auto-tabs/) | Tab bar whose tabs name themselves from agent task titles, running programs, or folders | [longwave/herdr-auto-tabs](https://github.com/longwave/herdr-auto-tabs), patched for [omp (oh-my-pi)](https://github.com/can1357/oh-my-pi) agents |
 | [`vitals`](mods/vitals/) | Live machine health window (⌘⌥V): CPU equalizer, memory/load/network meters, disks, any connected machine | [mrolafsson/herdr-vitals](https://github.com/mrolafsson/herdr-vitals) (MIT, vendored unmodified) |
 | [`space-folders`](mods/space-folders/) | Spaces sidebar with colored folders, repo favicons as avatars, and a ↗ that opens each repo's running frontend (tunnel domain, tailscale, or IP) | [jankeesvw/herdr-space-folders](https://github.com/jankeesvw/herdr-space-folders) (MIT), patched with repo favicons |
+| [`status-strip`](mods/status-strip/) | Strip above the status bar: each Linux machine's live CPU (5-min sparkline), memory and load, plus 9router quota per account (5-hour/weekly left, reset time, credit balance) | ours |
 | [`programs/`](programs/) | omp's π icon for every surface (tab bar, agents list, pane headers) | ours |
 
 ## Installing
@@ -18,10 +19,10 @@ cp -R mods/auto-tabs mods/space-folders ~/.config/herdr-app/mods/
 herdr-app check ~/.config/herdr-app/mods/auto-tabs
 ```
 
-`auto-tabs` and `space-folders` replace blocks of a layout. [`layouts/my-folders.json`](layouts/my-folders.json) is Herdr's `main` with both already wired in:
+`auto-tabs` and `space-folders` replace blocks of a layout. [`layouts/my-folders.json`](layouts/my-folders.json) is Herdr's `main` with `space-folders`, `auto-tabs` and `status-strip` already wired in:
 
 ```sh
-cp -R mods/auto-tabs mods/space-folders ~/.config/herdr-app/mods/
+cp -R mods/auto-tabs mods/space-folders mods/status-strip ~/.config/herdr-app/mods/
 cp layouts/my-folders.json ~/.config/herdr-app/layouts/
 herdr-app do layout.switch '{"name":"my-folders"}'
 ``` `vitals` opens with ⌘⌥V and provisions its sampler itself, per machine, on first view.

@@ -157,6 +157,16 @@
           "gap": 8
         },
         {
+          "id": "quota",
+          "type": "block",
+          "content": {
+            "mod": "status-strip"
+          },
+          "size": {
+            "px": 26
+          }
+        },
+        {
           "id": "status",
           "type": "block",
           "content": {
