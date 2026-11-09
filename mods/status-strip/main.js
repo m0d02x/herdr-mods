@@ -11,7 +11,7 @@
 // The token never leaves this computer except to that 9router. No file: the
 // quota side stays empty.
 
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { theme, home, hc, exec } from "herdr";
 import * as fs from "fs/promises";
@@ -43,8 +43,14 @@ export function parseVitals(out, prev, now) {
   return { busy, total, cpu, hist, acc, since, mem: 100 * (1 - f.mem[1] / f.mem[0]), load5: f.load[1], cores: f.cores[0] };
 }
 
-const SPARK = "▁▂▃▄▅▆▇█";
-export const spark = (hist) => hist.map((x) => SPARK[Math.min(7, Math.floor((x / 100) * 8))]).join("");
+// Bar heights in px for a CPU history: at least 1 so the window shows, and
+// scaled to the busiest of 25% and the window's own peak — so a calm server's
+// 7–15% still has shape, and a real spike reads as one.
+const SPARK_H = 12;
+export const sparkHeights = (hist) => {
+  const top = Math.max(25, ...hist);
+  return hist.map((x) => Math.max(1, Math.round((x / top) * SPARK_H)));
+};
 
 // ── 9router quota ─────────────────────────────────────────────────────────
 
@@ -72,7 +78,43 @@ export function summarize(conn, usage) {
     if (!worst || worst.kind === "balance" || pct < worst.pct) worst = item;
   }
   if (!worst) return null;
-  return { id: conn.id, provider: conn.provider, label: labelOf(conn, usage), ...worst, all: q };
+  return { id: conn.id, provider: conn.provider, label: labelOf(conn, usage), account: conn.name || conn.email || null, ...worst, all: q };
+}
+
+// The rows as chips: one per provider, tightest provider first.
+export function groupRows(rows) {
+  const groups = new Map();
+  for (const r of rows) {
+    const k = brandOf(r)?.icon ?? r.label;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const sorted = [...groups.values()].map((g) => g.sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101)));
+  return sorted.sort((a, b) => (pool(a).pct ?? 101) - (pool(b).pct ?? 101));
+}
+
+// A provider's accounts as one: 9router falls over to the next account when
+// one runs out, so what's left is the pool. Windows: the mean percent left
+// and the soonest reset; balances: their sum.
+// ponytail: the mean treats every account as the same plan size; weight by
+// plan if accounts on different tiers ever share a provider.
+export function pool(group) {
+  const windows = group.filter((r) => r.kind === "window");
+  const balances = group.filter((r) => r.kind === "balance");
+  if (windows.length) {
+    const resets = windows.map((r) => r.resetAt).filter(Boolean);
+    return { kind: "window", pct: windows.reduce((s, r) => s + r.pct, 0) / windows.length, resetAt: resets.length ? Math.min(...resets) : null };
+  }
+  const sum = balances.reduce((s, r) => s + Number(String(r.text).replace(/[^0-9.]/g, "")), 0);
+  return { kind: "balance", pct: null, text: `${String(balances[0]?.text ?? "").startsWith("$") ? "$" : ""}${sum.toFixed(2)}`, resetAt: null };
+}
+
+export function shortName(account, i) {
+  const s = String(account ?? "").trim();
+  if (!s) return `#${i + 1}`;
+  const n = /^account\s*(\d+)$/i.exec(s);
+  if (n) return `Account ${n[1]}`;
+  return s;
 }
 
 // "claude", "codex", "glm", "deepseek", else the account's name.
@@ -81,6 +123,19 @@ function labelOf(conn, usage) {
   if (!p.startsWith("openai-compatible")) return p;
   return conn.name ?? usage?.plan ?? "custom";
 }
+
+// Each provider's own mark and brand color (icons: LobeHub, MIT), by the
+// provider id or, for an openai-compatible account, by its name. Unknown
+// accounts keep the plain label.
+const BRANDS = {
+  claude: { icon: "claude", color: "#D97757", name: "Claude" },
+  codex: { icon: "codex", color: "#7A9DFF", name: "Codex" },
+  glm: { icon: "glm", color: "#3859FF", name: "GLM" },
+  deepseek: { icon: "deepseek", color: "#4D6BFE", name: "DeepSeek" },
+  kimi: { icon: "kimi", color: "#1783FF", name: "Kimi" },
+  qwen: { icon: "qwen", color: "#615CED", name: "Qwen" },
+};
+export const brandOf = (r) => BRANDS[r.provider] ?? BRANDS[String(r.label).toLowerCase()] ?? null;
 
 // "2h 14m", "3d 5h", "41m" until a reset.
 export function untilText(ms) {
@@ -136,6 +191,14 @@ export default class StatusStrip extends View {
     });
   }
 
+  // The last 5 minutes of CPU as real bars, oldest left: each 10 s average,
+  // tinted by its own level, bottom-aligned in a SPARK_H-tall box.
+  spark(m, hist, t, tone) {
+    const hs = sparkHeights(hist);
+    return h_flex().id(`v-${m}-spark`).h(SPARK_H).gap(1).flex_none().items_end().tooltip(`CPU, last 5 min (peak ${Math.round(Math.max(...hist))}%)`)
+      .children(hist.map((x, i) => div().w(3).h(hs[i]).rounded(1).flex_none().bg(tone(x, 70, 90))));
+  }
+
   machineChip(m, t) {
     const v = this.vitals[m];
     if (!v) return null;
@@ -148,7 +211,7 @@ export default class StatusStrip extends View {
       .child(svg("mods/workspace-chrome/server.svg").size(11).flex_none().text_color(t.dim))
       .child(div().text_color(t.dim).child(m))
       .child(stat("cpu", "CPU, last 2 s", v.cpu == null ? "—" : `${Math.round(v.cpu)}%`, cpuTone))
-      .when(v.hist.length > 1, (el) => el.child(div().id(`v-${m}-spark`).flex_none().tooltip("CPU, last 5 min").text_color(cpuTone).font_family("JetBrains Mono").child(spark(v.hist))))
+      .when(v.hist.length > 1, (el) => el.child(this.spark(m, v.hist, t, tone)))
       .child(stat("memory", "Memory in use", `${Math.round(v.mem)}%`, tone(v.mem, 80, 92)))
       .child(stat("gauge", `Load, 5 min average, ${v.cores} cores`, `${v.load5.toFixed(1)}/${v.cores}`, tone((100 * v.load5) / v.cores, 80, 120)));
   }
@@ -172,7 +235,7 @@ export default class StatusStrip extends View {
           const u = await fetch(`${base}/api/usage/${encodeURIComponent(c.id)}`, { headers }).catch(() => null);
           return u?.ok ? summarize(c, await u.json().catch(() => null)) : null;
         }));
-        this.rows = rows.filter(Boolean).sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101));
+        this.rows = rows.filter(Boolean);
         this.error = null;
       } catch (e) {
         this.error = String(e?.message ?? e);
@@ -181,15 +244,28 @@ export default class StatusStrip extends View {
     });
   }
 
-  chip(r, t) {
-    const color = r.pct == null ? t.muted : r.pct <= 10 ? t.ansi1 : r.pct <= 30 ? t.ansi3 : t.muted;
-    const left = r.kind === "balance" ? r.text : `${Math.round(r.pct)}%`;
-    const reset = r.resetAt ? untilText(r.resetAt - Date.now()) : "";
-    const detail = Object.entries(r.all).map(([n, w]) => w.isCreditBalance
-      ? `${n}: ${(w.total - (w.used ?? 0)).toFixed(2)} ${w.currency ?? ""}`
-      : `${n}: ${Math.round(w.remainingPercentage ?? w.remaining ?? 0)}% left${w.resetAt ? `, resets in ${untilText(Date.parse(w.resetAt) - Date.now())}` : ""}`).join("\n");
-    return h_flex().id(`q-${r.id}`).gap(4).flex_none().items_center().tooltip(`${r.label}\n${detail}`)
-      .child(div().text_color(t.dim).child(r.label))
+  // One provider: its mark and name in brand color, then the pool's left
+  // and soonest reset. Hover lists each account: its tightest window, then
+  // every window it has.
+  chip(group, t) {
+    const brand = brandOf(group[0]);
+    const p = pool(group);
+    const color = p.pct == null ? t.muted : p.pct <= 10 ? t.ansi1 : p.pct <= 30 ? t.ansi3 : t.muted;
+    const left = p.kind === "balance" ? p.text : `${Math.round(p.pct)}%`;
+    const reset = p.resetAt ? untilText(p.resetAt - Date.now()) : "";
+    const windowLine = (n, w) => w.isCreditBalance
+      ? `    ${n}: ${(w.total - (w.used ?? 0)).toFixed(2)} ${w.currency ?? ""}`
+      : `    ${n}: ${Math.round(w.remainingPercentage ?? w.remaining ?? 0)}% left${w.resetAt ? `, resets in ${untilText(Date.parse(w.resetAt) - Date.now())}` : ""}`;
+    const accountLines = group.map((r, i) => {
+      const head = r.kind === "balance" ? r.text : `${Math.round(r.pct)}% left${r.resetAt ? `, resets in ${untilText(r.resetAt - Date.now())}` : ""}`;
+      return [`${shortName(r.account, i)} — ${head}`, ...Object.entries(r.all).filter(([, w]) => w && !w.unlimited).map(([n, w]) => windowLine(n, w))].join("\n");
+    });
+    const title = `${brand?.name ?? group[0].label}${group.length > 1 ? ` · ${group.length} accounts, ${left} pooled` : ""}`;
+    return h_flex().id(`qg-${group[0].id}`).gap(4).flex_none().items_center()
+      .tooltip([title, ...accountLines].join("\n"))
+      .when(Boolean(brand), (el) => el.child(image(`mods/status-strip/icons/providers/${brand.icon}.svg`).size(12).flex_none()))
+      .child(div().text_color(brand?.color ?? t.dim).child(brand?.name ?? group[0].label))
+      .when(group.length > 1, (el) => el.child(div().px(3).rounded(3).bg(t.hover).text_size(10).text_color(t.muted).child(`×${group.length}`)))
       .child(div().text_color(color).child(left))
       .when(Boolean(reset), (el) => el.child(svg("mods/workspace-chrome/clock.svg").size(11).text_color(t.dim)).child(div().text_color(t.dim).child(reset)));
   }
@@ -198,7 +274,7 @@ export default class StatusStrip extends View {
     const t = theme();
     const machines = this.machines.map((m) => this.machineChip(m, t)).filter(Boolean);
     const quota = this.error ? [div().text_color(t.dim).child(`9router: ${this.error}`)]
-      : this.rows.length ? this.rows.map((r) => this.chip(r, t))
+      : this.rows.length ? groupRows(this.rows).map((g) => this.chip(g, t))
       : [div().text_color(t.dim).child("9router: …")];
     return h_flex().size_full().px(14).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11.5).text_color(t.muted)
       .children(machines)

@@ -3,7 +3,8 @@
 A thin strip above Herdr's status bar.
 
 - **Left — machines:** each connected Linux machine's CPU (last 2 s, plus a 5-minute sparkline of 10 s averages), memory in use and 5-minute load against its cores. Read from `/proc` every 2 s via `exec`; nothing is installed there. Yellow from 70 % CPU / 80 % memory / 80 % of cores, red from 90 / 92 / 120.
-- **Right — [9router](https://github.com/decolua/9router) quota:** one chip per active account with its tightest window — percent left and time to reset — or a credit balance (DeepSeek). Hover for every window. Read every minute from 9router's `/api/usage`.
+- **Right — [9router](https://github.com/decolua/9router) quota:** one chip per provider, with its logo and brand color (Claude, Codex, GLM, DeepSeek, Kimi, Qwen; icons from [LobeHub](https://github.com/lobehub/lobe-icons), MIT). Several accounts of one provider pool into one figure — the mean of each account's tightest window and the soonest reset, or the summed balance — marked `×N`. Hover for the breakdown: each account, then every window it has. Read every minute from 9router's `/api/usage`.
+- The CPU sparkline draws 3 px bars scaled to the larger of 25 % and the window's peak, so a calm server still shows shape.
 
 ![strip](https://github.com/m0d02x/herdr-mods/raw/main/mods/status-strip/preview.png)
 
